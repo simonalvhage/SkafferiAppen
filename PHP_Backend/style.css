@@ -1,0 +1,40 @@
+/* Custom CSS for form styling */
+
+body {
+  font-family: Arial, sans-serif;
+  font-size: 30px;
+}
+
+.container {
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.form-group label {
+  font-weight: bold;
+}
+
+.form-control {
+  font-size: 30px;
+ display: block;
+  margin-left: auto;
+  margin-right: auto;
+  width: 40%;
+}
+
+.btn-primary {
+    margin-top: 30px;
+  padding: 20px 20px;
+  font-size: 18px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  width: 40%;
+}
+
+.error-message {
+  color: red;
+  font-size: 14px;
+  margin-top: 10px;
+}
