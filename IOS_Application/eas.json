@@ -1,0 +1,24 @@
+{
+  "cli": {
+    "version": ">= 3.15.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {}
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "mobilsnygg@gmail.com",
+        "ascAppId": "6450863771",
+        "appleTeamId": "P6YZ465946"
+      }
+    }
+  }
+}
