@@ -1,5 +1,4 @@
 # conftest.py
-
 import pytest
 from random_word import RandomWords
 from api_endpoints import APIEndpoints
