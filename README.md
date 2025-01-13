@@ -42,4 +42,4 @@ Skafferiappen is more than just a mobile app; it's a smart tool that transforms 
 
 ---
 
-Download the app from [App Store]([https://example.com](https://apps.apple.com/se/app/skafferiappen/id6450863771)https://apps.apple.com/se/app/skafferiappen/id6450863771) and make grocery management simpler and more enjoyable!
+Download the app from [App Store]([https://example.com](https://apps.apple.com/se/app/skafferiappen/id6450863771)https://apps.apple.com/se/app/skafferiappen/id6450863771) and make grocery management simpler and more enjoyable
