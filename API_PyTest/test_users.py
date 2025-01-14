@@ -28,6 +28,12 @@ def test_login_user(user_data):
     assert "LOGGED IN" in response.json()["message"]
     log.info(f"User {user_data['username']} logged in successfully.")
 
+def test_delete_user(user_data):
+    response = APIEndpoints.delete_user(user_data["api_key"])
+    assert response.status_code == 200
+    assert "success" in response.json()
+    log.info(f"User {user_data['username']} deleted successfully.")
+'''
 def test_forgot_email_found(user_data):
     """Testa om forgot.php fungerar för en giltig e-postadress."""
     email = "valid_user@example.com"
@@ -62,9 +68,4 @@ def test_reset_missing_token(user_data):
     response = requests.get(f"{BASE_URL}/reset.php")
     assert response.status_code == 200
     assert "Invalid reset token." in response.text
-
-def test_delete_user(user_data):
-    response = APIEndpoints.delete_user(user_data["api_key"])
-    assert response.status_code == 200
-    assert "success" in response.json()
-    log.info(f"User {user_data['username']} deleted successfully.")
+'''
