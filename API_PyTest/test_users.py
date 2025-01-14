@@ -5,7 +5,7 @@ from random_word import RandomWords
 import logging
 
 log = logging.getLogger(__name__)
-BASE_URL = "alvhage.se/api"
+BASE_URL = "http://alvhage.se/api"
 
 @pytest.fixture(scope="module")
 def user_data():
