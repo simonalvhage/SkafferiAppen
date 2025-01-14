@@ -28,27 +28,21 @@ def test_login_user(user_data):
     assert "LOGGED IN" in response.json()["message"]
     log.info(f"User {user_data['username']} logged in successfully.")
 
-def test_delete_user(user_data):
-    response = APIEndpoints.delete_user(user_data["api_key"])
-    assert response.status_code == 200
-    assert "success" in response.json()
-    log.info(f"User {user_data['username']} deleted successfully.")
-
-def test_forgot_email_found(setup_database):
+def test_forgot_email_found(user_data):
     """Testa om forgot.php fungerar för en giltig e-postadress."""
     email = "valid_user@example.com"
     response = requests.post(f"{BASE_URL}/forgot.php", data={"email": email})
     assert response.status_code == 200
     assert response.json()["message"] == "OK"
 
-def test_forgot_email_not_found(setup_database):
+def test_forgot_email_not_found(user_data):
     """Testa om forgot.php returnerar rätt svar för ogiltig e-postadress."""
     email = "nonexistent_user@example.com"
     response = requests.post(f"{BASE_URL}/forgot.php", data={"email": email})
     assert response.status_code == 400
     assert response.json()["error"] == "E-mail not found."
 
-def test_reset_valid_token(setup_database):
+def test_reset_valid_token(user_data):
     """Testa om reset.php fungerar för en giltig token."""
     reset_token = "valid_reset_token"
     new_pin = "1234"
@@ -56,15 +50,21 @@ def test_reset_valid_token(setup_database):
     assert response.status_code == 200
     assert "Your PIN has been successfully reset." in response.text
 
-def test_reset_invalid_token(setup_database):
+def test_reset_invalid_token(user_data):
     """Testa om reset.php returnerar rätt svar för ogiltig token."""
     reset_token = "invalid_reset_token"
     response = requests.get(f"{BASE_URL}/reset.php?token={reset_token}")
     assert response.status_code == 200
     assert "Invalid reset token." in response.text
 
-def test_reset_missing_token(setup_database):
+def test_reset_missing_token(user_data):
     """Testa om reset.php hanterar saknade tokens korrekt."""
     response = requests.get(f"{BASE_URL}/reset.php")
     assert response.status_code == 200
     assert "Invalid reset token." in response.text
+
+def test_delete_user(user_data):
+    response = APIEndpoints.delete_user(user_data["api_key"])
+    assert response.status_code == 200
+    assert "success" in response.json()
+    log.info(f"User {user_data['username']} deleted successfully.")
