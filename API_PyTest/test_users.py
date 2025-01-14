@@ -1,6 +1,5 @@
 import requests
 import pytest
-from db_helpers import reset_database
 from api_endpoints import BASE_URL, APIEndpoints
 from random_word import RandomWords
 import logging
@@ -17,13 +16,6 @@ def user_data():
     response = APIEndpoints.create_user(username, email, pin)
     assert response.status_code == 200
     return {"username": username, "email": email, "pin": pin, "api_key": response.json()["api_key"]}
-
-@pytest.fixture
-def setup_database():
-    """
-    Setup och teardown för att återställa databasen mellan tester.
-    """
-    reset_database()
 
 def test_create_user(user_data):
     assert user_data["api_key"] is not None
