@@ -1,10 +1,11 @@
 import requests
 import pytest
-from api_endpoints import BASE_URL, APIEndpoints
+from api_endpoints import APIEndpoints
 from random_word import RandomWords
 import logging
 
 log = logging.getLogger(__name__)
+BASE_URL = "alvhage.se/api"
 
 @pytest.fixture(scope="module")
 def user_data():
