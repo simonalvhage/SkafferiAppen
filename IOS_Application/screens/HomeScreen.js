@@ -1,468 +1,363 @@
-import React, { useState, useEffect } from 'react';
-import { Text, View, StyleSheet, Button, Alert,TouchableOpacity, Dimensions} from 'react-native';
-import { Camera } from 'expo-camera';
-import { useNavigation } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
+import React, { useState, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  Dimensions,
+  StatusBar,
+} from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../src/AuthContext';
+import { apiGetProductByEAN, gs1Search } from '../src/api';
+import { COLORS, FONT, RADIUS, SPACING } from '../src/theme';
+import { FontAwesome as Icon } from '@expo/vector-icons';
 
-const windowWidth = Dimensions.get('window').width;
-const windowHeight = Dimensions.get('window').height;
-const scannerWidth = windowWidth * 0.7;
-const scannerHeight = windowHeight * 0.2;
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const SCANNER_SIZE = SCREEN_WIDTH * 0.7;
 
 export default function HomeScreen() {
-  const [borderColors, setBorderColors] = useState('white'); // Add this for dynamic border color change
+  const [borderColor, setBorderColor] = useState('rgba(255,255,255,0.6)');
   const [isActive, setIsActive] = useState(true);
   const [scanned, setScanned] = useState(false);
-  const [text, setText] = useState('Not yet scanned');
-  const [barcode_data, setBarcode_data] = useState('');
-  const [athome, setAthome] = useState(false);
-  const [unknownproduct,SetUnknownproduct] = useState(false)
-  const [alertShown, setAlertShown] = useState(false);
-  const [flashMode, setFlashMode] = useState(Camera.Constants.FlashMode.off);
-  const [cameraPermission, setCameraPermission] = useState(null);
-  const [type, setType] = useState(Camera.Constants.Type.back);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [torch, setTorch] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
+  const processingRef = useRef(false);
 
   const navigation = useNavigation();
+  const { isLoggedIn, apiKey } = useAuth();
 
   useFocusEffect(
     React.useCallback(() => {
-    checkLoggedIn();
-}));
+      setIsActive(true);
+      setBorderColor('rgba(255,255,255,0.6)');
+      setScanned(false);
+      processingRef.current = false;
+      return () => setIsActive(false);
+    }, [])
+  );
 
-const toggleFlashlight = () => {
-  if (flashMode === Camera.Constants.FlashMode.off) {
-    setFlashMode(Camera.Constants.FlashMode.torch);
-  } else {
-    setFlashMode(Camera.Constants.FlashMode.off);
-  }
-};
-
-  const checkLoggedIn = async () => {
-    try{
-    const storedUsername = await AsyncStorage.getItem('username');
-    const storedApiKey = await AsyncStorage.getItem('apiKey');
-
-    if (storedUsername && storedApiKey) {
-      // User is already logged in, navigate to the main app
-      setIsLoggedIn(true);
-      global.api_key = storedApiKey;
-    }
-    else{
-      setIsLoggedIn(false);
-    }
-    }
-    catch{}
-  };
-
-  const handleNewProductPress = async () => {
-    Alert.prompt(
-      "Skriv in produktens namn!",
-      "Skriv gärna in produkt och varumärke t.ex 'Eldorado Kanel'",
-      [
-        {
-          text: "Cancel",
-          onPress: () => {console.log("Cancel Pressed"),                  
-          setBorderColors('white'); // Reset border color to white
-          setScanned(false); // Reset scanned state to false, enabling scanning again
-        },
-          style: "cancel"
-          
-        },
-        {
-          text: "OK",
-          onPress: new_product => {
-            onPressItem(new_product)
-          }
-        }
-      ],
-      "plain-text"
-    );
-  };
-
-  const onPressItem =(new_product)=>{
-    console.log(new_product);
-    setText(new_product);
-    SetUnknownproduct(false)
-    setBorderColors('green');
+  const navigateToProduct = (text, semitext, action, barcode_data) => {
+    setBorderColor(action === 'add' ? COLORS.warning : COLORS.accent);
     setTimeout(() => {
-      navigation.navigate('Produkt', {
-        text: new_product,
-        semitext: "Finns inte i ditt skafferi",
-        action: "add",
-        barcode_data: barcode_data
-    });
-  }, 500); // 1-second delay
-}
-
-
-const showLoginAlert = () => {
-    if (alertShown) return; // If the alert has been shown, exit early
-
-    Alert.alert(
-        "Konto behövs",
-        "Logga in/Skapa konto för att använda funktionen",
-        [
-            {
-                text: "Avbryt",
-                style: "cancel"
-            },
-            {
-                text: "Logga in/Skapa konto",
-                onPress: () => navigation.navigate('Logga in')
-            }
-        ],
-        { cancelable: true }
-    );
-
-    setAlertShown(true); // Mark the alert as shown
-};
-
-
-
-  const askForCameraPermission = () => {
-    (async () => {
-      const { status } = await Camera.requestCameraPermissionsAsync();
-      setCameraPermission(status === 'granted');
-    })();
+      navigation.navigate('Produkt', { text, semitext, action, barcode_data });
+    }, 400);
   };
 
-  useEffect(() => {
-    // Ask for camera permission
-    askForCameraPermission();
+  const handleBarCodeScanned = async ({ data }) => {
+    if (scanned || processingRef.current) return;
+    processingRef.current = true;
+    setScanned(true);
 
-    const unsubscribeBlur = navigation.addListener('blur', () => {
-        setIsActive(false);
-    });
+    if (!isLoggedIn) {
+      Alert.alert(
+        'Konto behövs',
+        'Logga in eller skapa konto för att använda skannern',
+        [
+          { text: 'Avbryt', style: 'cancel', onPress: resetScanner },
+          { text: 'Logga in', onPress: () => navigation.navigate('Logga in') },
+        ]
+      );
+      return;
+    }
 
-    const unsubscribeFocus = navigation.addListener('focus', () => {
-        // Reset the border color and set the scanned state to false when the screen is focused
-        setBorderColors('white');
-        setScanned(false);
-        setIsActive(true);
-    });
-    
-    return () => {
-        unsubscribeBlur();
-        unsubscribeFocus();
-    };
-}, [navigation]);
+    try {
+      // 1. Check if product is in user's pantry
+      const userResult = await apiGetProductByEAN(data, apiKey);
+      if (userResult.status === 1) {
+        navigateToProduct(
+          userResult.info[0].product,
+          'Finns i ditt skafferi',
+          'remove',
+          data
+        );
+        return;
+      }
 
+      // 2. Check if product exists in the database
+      const dbResult = await apiGetProductByEAN(data);
+      if (dbResult.status === 1) {
+        navigateToProduct(
+          dbResult.info[0].product,
+          'Finns ej i ditt skafferi',
+          'add',
+          data
+        );
+        return;
+      }
 
-const showAddProductAlert = () => {
-  Alert.alert(
-      "Produkt ej hittad", // Alert title
-      "Skapa produkten här", // Alert message
-      [
+      // 3. Try GS1 lookup
+      try {
+        const gs1Result = await gs1Search(data);
+        if (gs1Result.results?.[0]) {
+          const item = gs1Result.results[0];
+          const name = [item.brandName, item.functionalName].filter(Boolean).join(' ');
+          navigateToProduct(name, 'Finns ej i ditt skafferi', 'add', data);
+          return;
+        }
+      } catch {
+        // GS1 failed, fall through to manual entry
+      }
+
+      // 4. Product not found anywhere - prompt manual entry
+      setBorderColor(COLORS.danger);
+      Alert.alert(
+        'Produkt ej hittad',
+        'Vill du lägga till produkten manuellt?',
+        [
           {
-              text: "Lägg till produkt",
-              onPress: () => handleNewProductPress(),
-              style: "default"
+            text: 'Lägg till',
+            onPress: () => promptNewProduct(data),
           },
           {
-              text: "Avbryt",
-              onPress: () => {
-                  console.log("Cancel Pressed");
-                  setBorderColors('white'); // Reset border color to white
-                  setScanned(false); // Reset scanned state to false, enabling scanning again
-              },
-              style: "cancel"
-          }
-      ],
-      {
-          cancelable: true, // Whether tapping outside the alert will close it
-          onDismiss: () => { // This will ensure that even if the user taps outside to dismiss the alert, it will still reset the states
-              setBorderColors('white');
-              setScanned(false);
-          }
-      }
-  );
-}
-
-
-  
-  
-
-  const handleBarCodeScanned = async ({ type, data }) => {
-    if (!isLoggedIn) {
-      showLoginAlert();
-      setBorderColors('red'); // Set border color to red
-      return; // Exit the function early
-  }
-    setScanned(true);
-    console.log(data);
-    setBarcode_data(data);
-    const response = await fetch("http://alvhage.se/api/get.php?EAN=" + data + "&api_key=" + global.api_key);
-    const json = await response.json();
-    console.log(json);
-    if (json.status == 1) {
-      setText(json.info[0].product);
-      setAthome(true);
-      setBorderColors('green'); // Set border color to red
-      setTimeout(() => {
-      navigation.navigate('Produkt', {
-        text: json.info[0].product,
-        semitext: "Finns i ditt skafferi",
-        action: "remove",
-        barcode_data: data
-    });
-  }, 500); // 1-second delay
-
-      //Should be redirected to ProductScreen, the product is at home, asking if want to remove
-
-
-    } else {
-      const response = await fetch("http://alvhage.se/api/get.php?EAN=" + data);
-      const json = await response.json();
-      console.log(json);
-      if (json.status == 1) {
-        setBorderColors('orange'); // Set border color to red
-        setTimeout(() => {
-          navigation.navigate('Produkt', {
-            text: json.info[0].product,
-            semitext: "Finns ej i ditt skafferi",
-            action: "add",
-            barcode_data: data
-          });
-        }, 500); // 1-second delay
-        
-      }
-      else {
-        try {
-          const response = await fetch("https://productsearch.gs1.se/foodservice/tradeItem/search", {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              "query": data,
-              "sortby": 0,
-              "sortDirection": 1
-            })
-          });
-          const json = await response.json();
-          console.log(json.results[0].brandName + " " +json.results[0].functionalName)
-          setBorderColors('orange'); // Set border color to red
-          setTimeout(() => {
-          navigation.navigate('Produkt', {
-            text: json.results[0].brandName + " " +json.results[0].functionalName,
-            semitext: "Finns ej i ditt skafferi",
-            action: "add",
-            barcode_data: data
-        });
-      }, 500); // 1-second delay
-
-          //Redirect to ProductScreen and ask if the user wants to add product
-
-
-
-        } catch (error) {
-          SetUnknownproduct(true);
-          setBorderColors('red'); // Set border color to red
-          setTimeout(() => {
-          showAddProductAlert();
-        }, 500); // 1-second delay
-        }
-      }
+            text: 'Avbryt',
+            style: 'cancel',
+            onPress: resetScanner,
+          },
+        ],
+        { cancelable: true, onDismiss: resetScanner }
+      );
+    } catch (error) {
+      console.error('Scan error:', error);
+      setBorderColor(COLORS.danger);
+      resetScanner();
     }
   };
 
-  if (cameraPermission === null) {
+  const promptNewProduct = (barcode) => {
+    Alert.prompt(
+      'Namnge produkten',
+      "T.ex. 'Eldorado Kanel'",
+      [
+        { text: 'Avbryt', style: 'cancel', onPress: resetScanner },
+        {
+          text: 'OK',
+          onPress: (name) => {
+            if (name?.trim()) {
+              navigateToProduct(name.trim(), 'Finns ej i ditt skafferi', 'add', barcode);
+            } else {
+              resetScanner();
+            }
+          },
+        },
+      ],
+      'plain-text'
+    );
+  };
+
+  const resetScanner = () => {
+    setBorderColor('rgba(255,255,255,0.6)');
+    setScanned(false);
+    processingRef.current = false;
+  };
+
+  if (!permission) {
     return (
-      <View style={styles.container}>
-        <Text>Begär kamerarättigheter</Text>
+      <View style={styles.centerContainer}>
+        <Text style={styles.permissionText}>Laddar kamera...</Text>
       </View>
     );
   }
-  if (cameraPermission === false) {
+
+  if (!permission.granted) {
     return (
-      <View style={styles.container}>
-        <Text style={{ margin: 10 }}>Kamera ej tillgänglig</Text>
-        <Button title={'Allow Camera'} onPress={() => askForCameraPermission()} />
+      <View style={styles.centerContainer}>
+        <Icon name="camera" size={48} color={COLORS.textLight} />
+        <Text style={styles.permissionTitle}>Kameraåtkomst behövs</Text>
+        <Text style={styles.permissionText}>
+          Vi behöver tillgång till kameran för att skanna streckkoder
+        </Text>
+        <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
+          <Text style={styles.permissionButtonText}>Ge tillgång</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1 }}>
-        <View style={styles.barcodeContainer}>
-            {isActive && (
-                <Camera
-                    type={type}
-                    onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
-                    style={{ flex: 1 }}
-                    flashMode={flashMode}
-                >
-                    <View style={styles.overlay}>
-                      
-                        <View style={styles.overlayFiller} />
-                        <View style={styles.overlayRow}>
-                            <View style={styles.overlayFiller} />
-                            <View style={[styles.overlayWindow, { borderColor: borderColors }]}>
-                                <Text style={styles.helptext}>Skanna sträckkoden här!</Text>
-                            </View>
-                            <View style={styles.overlayFiller} />
-                        </View>
-                        <View style={styles.overlayFiller} />
-                    </View>
-                    <TouchableOpacity style={[ styles.flashlightButton, flashMode === Camera.Constants.FlashMode.torch ? styles.flashlightOn : {}]} 
-                      onPress={toggleFlashlight}>
-                      <Text style={styles.flashlightText}>
-                      ⚡
-                      </Text>
-                      </TouchableOpacity>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      {isActive && (
+        <CameraView
+          style={StyleSheet.absoluteFill}
+          facing="back"
+          barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e'] }}
+          onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+          enableTorch={torch}
+        />
+      )}
 
-                </Camera>
-            )}
+      {/* Overlay on top of camera using absolute positioning */}
+      <View style={styles.overlay} pointerEvents="box-none">
+        <View style={styles.overlayTop} />
+        <View style={styles.overlayMiddle} pointerEvents="box-none">
+          <View style={styles.overlaySide} />
+          <View style={[styles.scanWindow, { borderColor }]}>
+            <View style={[styles.corner, styles.cornerTL]} />
+            <View style={[styles.corner, styles.cornerTR]} />
+            <View style={[styles.corner, styles.cornerBL]} />
+            <View style={[styles.corner, styles.cornerBR]} />
+          </View>
+          <View style={styles.overlaySide} />
         </View>
+        <View style={styles.overlayBottom}>
+          <Text style={styles.helpText}>
+            {scanned ? 'Bearbetar...' : 'Rikta kameran mot streckkoden'}
+          </Text>
+        </View>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.torchButton, torch && styles.torchButtonOn]}
+        onPress={() => setTorch((t) => !t)}
+      >
+        <Icon name="bolt" size={22} color={torch ? COLORS.warning : COLORS.white} />
+      </TouchableOpacity>
+
+      {scanned && (
+        <TouchableOpacity style={styles.rescanButton} onPress={resetScanner}>
+          <Icon name="refresh" size={16} color={COLORS.white} />
+          <Text style={styles.rescanText}>Skanna igen</Text>
+        </TouchableOpacity>
+      )}
     </View>
-);
-
-
- }
+  );
+}
 
 const styles = StyleSheet.create({
-  barcodeContainer: {
+  container: {
     flex: 1,
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    top: 0,
-    overflow: 'hidden', // Add this line to hide the overflow content
+    backgroundColor: COLORS.black,
   },
-  storageContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    top: 60,
-    backgroundColor: 'white',
-    borderRadius: 30,
-    padding: 20,
-    zIndex: 1
-  },
-  storageItem: {
-    marginVertical: 10
-  },
-  textContainer: {
-    width: '100%',
-    maxWidth: 225,
-    backgroundColor: 'white',
-    borderRadius: 25,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 10,
-    top: "50%",
-    position: 'absolute',
-    alignSelf: 'center', // Add this line to center the container horizontally
-    backgroundColor: '#faf2f2',
-},
-  maintext: {
-    fontWeight: 'bold',
-    marginBottom: 15,
-    fontSize: 16,
-  },
-  semitext: {
-    fontSize: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 5,
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-evenly',
-    margin: 10
-  },
-  circle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'white',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 5,
-    marginTop: -30,
-  },
-  backArrow: {
-    position: 'absolute',
-    top: 0,
-    left: 5,
-    padding: 5,
-    fontWeight: 'normal',
-  },
-  button: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginVertical: 5,
-  },
-  buttonText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
-  instructionsContainer: {
+  centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
+    backgroundColor: COLORS.background,
+    paddingHorizontal: SPACING.xxl,
+    gap: SPACING.md,
   },
-  instructions: {
-    fontSize: 14,
+  permissionTitle: {
+    fontSize: FONT.size.xl,
+    ...FONT.bold,
+    color: COLORS.text,
+    marginTop: SPACING.md,
+  },
+  permissionText: {
+    fontSize: FONT.size.md,
+    color: COLORS.textSecondary,
     textAlign: 'center',
-    marginBottom: 10,
+    lineHeight: 22,
+  },
+  permissionButton: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.xl,
+    borderRadius: RADIUS.md,
+    marginTop: SPACING.md,
+  },
+  permissionButtonText: {
+    color: COLORS.white,
+    fontSize: FONT.size.md,
+    ...FONT.bold,
   },
   overlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  overlayTop: {
     flex: 1,
-    
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
-  instructions: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  overlayRow: {
+  overlayMiddle: {
     flexDirection: 'row',
-    alignItems: 'stretch',
   },
-  overlayFiller: {
+  overlaySide: {
     flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
-  overlayWindow: {
-    borderWidth: 6,
-    borderColor: 'white',
-    borderRadius: 15, // rounded corners
-    width: scannerWidth,
-    height: scannerWidth/1.5,
-    justifyContent: 'center',
+  overlayBottom: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center',
+    paddingTop: SPACING.xl,
+  },
+  scanWindow: {
+    width: SCANNER_SIZE,
+    height: SCANNER_SIZE * 0.65,
+    borderWidth: 2,
+    borderRadius: RADIUS.lg,
     backgroundColor: 'transparent',
   },
-
-  helptext: {
-    color: "white",
-    top: 70,
-    fontSize: 17
-  },
-  flashlightButton: {
+  corner: {
     position: 'absolute',
-    bottom: 20,
-    right: 20,
+    width: 24,
+    height: 24,
+    borderColor: COLORS.white,
+  },
+  cornerTL: {
+    top: -1,
+    left: -1,
+    borderTopWidth: 4,
+    borderLeftWidth: 4,
+    borderTopLeftRadius: RADIUS.lg,
+  },
+  cornerTR: {
+    top: -1,
+    right: -1,
+    borderTopWidth: 4,
+    borderRightWidth: 4,
+    borderTopRightRadius: RADIUS.lg,
+  },
+  cornerBL: {
+    bottom: -1,
+    left: -1,
+    borderBottomWidth: 4,
+    borderLeftWidth: 4,
+    borderBottomLeftRadius: RADIUS.lg,
+  },
+  cornerBR: {
+    bottom: -1,
+    right: -1,
+    borderBottomWidth: 4,
+    borderRightWidth: 4,
+    borderBottomRightRadius: RADIUS.lg,
+  },
+  helpText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: FONT.size.md,
+    ...FONT.medium,
+  },
+  torchButton: {
+    position: 'absolute',
+    bottom: 100,
+    right: SPACING.lg,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 30,
+    borderRadius: RADIUS.full,
     width: 50,
     height: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 10, // ensure the button is above other elements
   },
-  
-  flashlightText: {
-    fontSize: 25,
+  torchButtonOn: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
   },
-  flashlightOn: {
-    backgroundColor: 'rgba(255,255,255,0.5)',
-  }
-  
+  rescanButton: {
+    position: 'absolute',
+    bottom: 100,
+    alignSelf: 'center',
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm + 2,
+    paddingHorizontal: SPACING.lg,
+    borderRadius: RADIUS.full,
+  },
+  rescanText: {
+    color: COLORS.white,
+    fontSize: FONT.size.sm,
+    ...FONT.semibold,
+  },
 });

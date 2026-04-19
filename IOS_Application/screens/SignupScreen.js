@@ -1,181 +1,181 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert,ImageBackground, Animated, TouchableWithoutFeedback,Keyboard,KeyboardAvoidingView } from 'react-native';
-import background from '../assets/skafferiet.jpeg';
-import { Dimensions } from 'react-native';
-import { Platform } from 'react-native';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  StyleSheet,
+  Platform,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { apiSignup } from '../src/api';
+import { COLORS, SPACING, FONT, RADIUS, SHADOW } from '../src/theme';
 
 export default function SignupScreen({ navigation }) {
   const [username, setUsername] = useState('');
   const [pin, setPin] = useState('');
   const [email, setEmail] = useState('');
-  const [keyboardOffset] = useState(new Animated.Value(0));
-  const [headerHeight, setHeaderHeight] = useState(0);
-
-  useEffect(() => {
-    const window = Dimensions.get('window');
-    const headerHeightRatio = Platform.OS === 'ios' ? 0.5 : 0.4;
-    setHeaderHeight(window.height * headerHeightRatio); 
-
-    const keyboardShowListener = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      keyboardWillShow
-    );
-    const keyboardHideListener = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      keyboardWillHide
-    );
-
-    return () => {
-      keyboardShowListener.remove();
-      keyboardHideListener.remove();
-    };
-}, []);
-
-  const keyboardWillShow = (event) => {
-    Animated.timing(keyboardOffset, {
-        toValue: -200, // Adjust this value to control how much the overlay moves up
-        duration: event.duration,
-        useNativeDriver: true,
-    }).start();
-};
-
-const keyboardWillHide = (event) => {
-  Animated.timing(keyboardOffset, {
-      toValue: 0,
-      duration: event.duration,
-      useNativeDriver: true,
-  }).start();
-};
+  const [loading, setLoading] = useState(false);
 
   const handleSignup = async () => {
+    if (!username.trim() || !email.trim() || !pin.trim()) {
+      Alert.alert('Fel', 'Fyll i alla fält');
+      return;
+    }
+    if (pin.length !== 4) {
+      Alert.alert('Fel', 'Pin måste vara 4 siffror');
+      return;
+    }
+    setLoading(true);
     try {
-      const response = await fetch('http://alvhage.se/api/new.php', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `username=${username}&email=${email}&pin=${pin}`,
-      });
-      const json = await response.json();
-      console.log(json);
+      const json = await apiSignup(username, email, pin);
       if (json.api_key) {
-        Alert.alert('SUCCESS', 'Konto Skapat, vänligen logga in');
+        Alert.alert('Klart!', 'Konto skapat, vänligen logga in');
         navigation.navigate('Logga in');
       } else {
-        Alert.alert('Error', json['error']);
+        Alert.alert('Fel', json.error || 'Kunde inte skapa konto');
       }
     } catch (error) {
-      console.error(error);
-      Alert.alert('Error', 'Gick inte att skapa konto');
+      console.error('Signup error:', error);
+      Alert.alert('Fel', 'Gick inte att skapa konto');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const dismissKeyboard = () => {
-    Keyboard.dismiss();
-  };
-
-
   return (
-    <TouchableWithoutFeedback onPress={dismissKeyboard}>
-    <View style={styles.container}>
-      <ImageBackground source={background} style={styles.backgroundImage}>
-      <Animated.View style={[styles.overlay, { transform: [{ translateY: keyboardOffset }], top: headerHeight }]}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.contentContainer}
-        >
-            <Text style={styles.title}>Skapa konto</Text>
-            <View style={styles.form}>
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardView}
+      >
+        <View style={styles.header}>
+          <Text style={styles.title}>Skapa konto</Text>
+          <Text style={styles.subtitle}>Fyll i dina uppgifter nedan</Text>
+        </View>
+
+        <View style={styles.form}>
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>E-post</Text>
             <TextInput
-                placeholder="E-mail"
-                style={styles.input}
-                onChangeText={(text) => setEmail(text)}
-                value={email}
-              />
-              <TextInput
-                placeholder="Användarnamn"
-                style={styles.input}
-                onChangeText={(text) => setUsername(text)}
-                value={username}
-              />
-              <TextInput
-                keyboardType="numeric"
-                placeholder="Välj ett 4-siffrig pin"
-                secureTextEntry={true}
-                style={styles.input}
-                onChangeText={(text) => setPin(text)}
-                value={pin}
-              />
-              <TouchableOpacity style={styles.button} onPress={handleSignup}>
-                <Text style={styles.buttonText}>Skapa konto</Text>
-              </TouchableOpacity>
-            </View>
-            </KeyboardAvoidingView>
-          </Animated.View>
-      </ImageBackground>
-    </View>
-    </TouchableWithoutFeedback>
+              style={styles.input}
+              placeholder="din@email.se"
+              placeholderTextColor={COLORS.textLight}
+              onChangeText={setEmail}
+              value={email}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Användarnamn</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Välj ett användarnamn"
+              placeholderTextColor={COLORS.textLight}
+              onChangeText={setUsername}
+              value={username}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Pin (4 siffror)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Välj en 4-siffrig pin"
+              placeholderTextColor={COLORS.textLight}
+              keyboardType="number-pad"
+              secureTextEntry
+              onChangeText={setPin}
+              value={pin}
+              maxLength={4}
+            />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleSignup}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            {loading ? (
+              <ActivityIndicator color={COLORS.white} />
+            ) : (
+              <Text style={styles.buttonText}>Skapa konto</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: COLORS.background,
   },
-  backgroundImage: {
+  keyboardView: {
     flex: 1,
-    resizeMode: 'cover',
+    paddingHorizontal: SPACING.lg,
   },
-  overlay: {
-    flex: 1,
-    borderRadius: 30,
-    backgroundColor: '#faf2f2',
-  },
-  contentContainer: {
-    flex: 1,
-    alignItems: 'center',
+  header: {
+    marginTop: SPACING.xxl,
+    marginBottom: SPACING.xl,
   },
   title: {
-    marginTop: 10,
-    fontSize: 30,
+    fontSize: FONT.size.title,
+    ...FONT.bold,
+    color: COLORS.text,
+    marginBottom: SPACING.xs,
   },
-  title2: {
-    fontSize: 20,
-    marginBottom: 10,
-    marginTop: 40,
+  subtitle: {
+    fontSize: FONT.size.md,
+    color: COLORS.textSecondary,
   },
   form: {
-    width: '80%',
-    top: '4%',
+    gap: SPACING.md,
+  },
+  inputContainer: {
+    gap: SPACING.xs,
+  },
+  label: {
+    fontSize: FONT.size.sm,
+    ...FONT.semibold,
+    color: COLORS.text,
+    marginLeft: SPACING.xs,
   },
   input: {
-    fontSize: 16,
-    padding: 10,
-    backgroundColor: '#fff',
-    marginBottom: 10,
-    borderRadius: 5,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md,
+    fontSize: FONT.size.md,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   button: {
-    backgroundColor: '#FF9F79',
-    padding: 10,
-    borderRadius: 5,
-    marginBottom: 10,
+    backgroundColor: COLORS.primary,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    marginTop: SPACING.sm,
+    ...SHADOW.sm,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
   buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  createAccountButton: {
-    backgroundColor: '#f8bea7',
-    padding: 10,
-    borderRadius: 5,
-  },
-  createAccountButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    color: COLORS.white,
+    fontSize: FONT.size.lg,
+    ...FONT.bold,
   },
 });

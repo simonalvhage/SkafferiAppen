@@ -1,301 +1,324 @@
-import React, { useState, useEffect, useCallback,useRef } from 'react';
-import { Text, View, StyleSheet, FlatList, Alert, TextInput, TouchableOpacity, Keyboard, TouchableWithoutFeedback } from 'react-native';
-import { NavigationContainer, useFocusEffect } from '@react-navigation/native';
-import { RecyclerListView, DataProvider, LayoutProvider } from "recyclerlistview";
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  Alert,
+  TextInput,
+  TouchableOpacity,
+  Keyboard,
+  ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useAuth } from '../src/AuthContext';
+import { apiGetProducts, apiAddProduct, apiDeleteProduct } from '../src/api';
+import { COLORS, SPACING, FONT, RADIUS } from '../src/theme';
+import { FontAwesome as Icon } from '@expo/vector-icons';
 
-export default function ShoppingScreen({ navigation }) {
+function ListItem({ item, onAction }) {
+  return (
+    <TouchableOpacity style={styles.itemContainer} onPress={onAction} activeOpacity={0.6}>
+      <View style={styles.itemContent}>
+        <Text style={styles.itemText} numberOfLines={1}>{item.product}</Text>
+        <Text style={styles.dateText}>
+          {item.datum ? `Tillagt: ${item.datum}` : 'Tillagt: okänt datum'}
+        </Text>
+      </View>
+      <Icon name="ellipsis-h" size={18} color={COLORS.textLight} />
+    </TouchableOpacity>
+  );
+}
+
+export default function ShoppingScreen() {
   const [data, setData] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
   const [searchText, setSearchText] = useState('');
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const { isLoggedIn, apiKey } = useAuth();
+  const navigation = useNavigation();
 
-  useFocusEffect(
-    React.useCallback(() => {
-    checkLoggedIn();
-}));
-
-
-  const checkLoggedIn = async () => {
-    try{
-    const storedUsername = await AsyncStorage.getItem('username');
-    const storedApiKey = await AsyncStorage.getItem('apiKey');
-
-    if (storedUsername && storedApiKey) {
-      // User is already logged in, navigate to the main app
-      setIsLoggedIn(true);
-      global.api_key = storedApiKey;
-    }
-    else{
-      setIsLoggedIn(false);
-    }
-    }
-    catch{}
-  };
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
+    if (!apiKey) return;
+    setLoading(true);
     try {
-      const response = await fetch('http://alvhage.se/api/get.php?api_key=' + global.api_key + '&list=shopping', {
-        method: 'GET'
-      });
-      const json = await response.json();
-      if (json && json.info) {
-        setData(json.info);
-        setFilteredData(json.info);
-      }
-      else {
-        setData([]);
-        setFilteredData([]);
-      }
-      setData(json.info);
-      setFilteredData(json.info);
+      const json = await apiGetProducts(apiKey, 'shopping');
+      const items = json?.info || [];
+      setData(items);
+      setFilteredData(items);
     } catch (error) {
-      console.error(error);
+      console.error('Fetch shopping error:', error);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [apiKey]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchData();
-    }, [navigation]),
+      if (isLoggedIn) fetchData();
+    }, [isLoggedIn, fetchData])
   );
-  
 
-  const removeItem = async (item) => {
+  const handleSearch = (text) => {
+    setSearchText(text);
+    if (!text.trim()) {
+      setFilteredData(data);
+      return;
+    }
+    const filtered = data.filter((item) =>
+      item.product?.toLowerCase().includes(text.toLowerCase())
+    );
+    setFilteredData(filtered);
+  };
+
+  const handleAddManual = async () => {
+    if (!searchText.trim()) return;
+    const name = searchText.trim();
+    try {
+      await apiAddProduct(name, name, apiKey, 'shopping');
+      setSearchText('');
+      Keyboard.dismiss();
+      await fetchData();
+    } catch (error) {
+      console.error('Add to shopping error:', error);
+      Alert.alert('Fel', 'Kunde inte lägga till produkt');
+    }
+  };
+
+  const handleItemAction = (item) => {
     Alert.alert(
-      'Radera produkt',
-      'Flytta produkten till ditt skafferi eller radera',
-      [{
-        text: 'Lägg till i skafferiet',
-        onPress: async () => {
-          try {
-            const response = await fetch('http://alvhage.se/api/post.php', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-              body: `EAN=${item.EAN}&product=${item.product}&api_key=${global.api_key}`
-            });
-            const json = await response.text();
-            console.log(json);
-
-          } catch (error) {
-            console.error(error);
-          }
-          try {
-            const response = await fetch('http://alvhage.se/api/delete.php?EAN=' + item.EAN + "&api_key=" + global.api_key+ "&list=shopping", {
-              method: 'GET'
-            });
-            const json = await response.text();
-            console.log(json);
-          } catch (error) {
-            console.error(error);
-          }
-          const updatedData2 = data.filter((dataItem) => dataItem.EAN !== item.EAN);
-          setData(updatedData2);
-          setFilteredData(updatedData2);
-        },
-      },
+      item.product,
+      'Vad vill du göra?',
+      [
         {
-          text: 'Radera',
+          text: 'Flytta till skafferiet',
           onPress: async () => {
             try {
-              const response = await fetch('http://alvhage.se/api/delete.php?EAN=' + item.EAN + "&api_key=" + global.api_key + "&list=shopping", {
-                method: 'GET'
-              });
-              const json = await response.json();
+              await apiAddProduct(item.EAN, item.product, apiKey);
+              await apiDeleteProduct(item.EAN, apiKey, 'shopping');
+              const updated = data.filter((d) => d.EAN !== item.EAN);
+              setData(updated);
+              setFilteredData(updated);
             } catch (error) {
-              console.error(error);
+              console.error('Move to pantry error:', error);
             }
-            const updatedData = data.filter((dataItem) => dataItem.EAN !== item.EAN);
-            setData(updatedData);
-            setFilteredData(updatedData);
           },
-          style: 'destructive',
         },
-        { text: 'Avbryt', onPress: () => {} }
-      ],
-      { cancelable: true }
+        {
+          text: 'Radera',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await apiDeleteProduct(item.EAN, apiKey, 'shopping');
+              const updated = data.filter((d) => d.EAN !== item.EAN);
+              setData(updated);
+              setFilteredData(updated);
+            } catch (error) {
+              console.error('Delete shopping item error:', error);
+            }
+          },
+        },
+        { text: 'Avbryt', style: 'cancel' },
+      ]
     );
   };
 
-  const handleSearch = (text) => {
-    try{
-      setSearchText(text);
-      const filteredItems = data.filter((item) =>
-      item.product?.toLowerCase().includes(text.toLowerCase())
-      );
-      setFilteredData(filteredItems);
-    }catch{
-      console.log("Hello")
-    }
-  };
-
-
-  const handleAddPress = async (item) => {
-    console.log(`EAN=${item}&product=${item}`);
-    if (item) {
-      try {
-        const response = await fetch('http://alvhage.se/api/post.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `EAN=${item}&product=${item}&api_key=${global.api_key}&list=shopping`
-        });
-        const json = await response.text();
-        
-        // Assume the product was added successfully
-        // Create a new object for the added item
-        const newItem = { EAN: item, product: item };
-  
-        // Update the state
-        setData((prevData = []) => [...prevData, newItem]);
-        setFilteredData((prevFilteredData = []) => [...prevFilteredData, newItem]);        
-  
-      } catch (error) {
-        console.error(error);
-      }
-    }
-  };
-  
-  
-  const handleRemoveItem = (item) => () => {
-    removeItem(item);
+  if (!isLoggedIn) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.emptyContainer}>
+          <Icon name="shopping-cart" size={48} color={COLORS.textLight} />
+          <Text style={styles.emptyTitle}>Inköpslista</Text>
+          <Text style={styles.emptyText}>
+            Logga in eller skapa konto för att se din inköpslista
+          </Text>
+          <TouchableOpacity
+            style={styles.loginButton}
+            onPress={() => navigation.navigate('Logga in')}
+          >
+            <Text style={styles.loginButtonText}>Logga in</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
   }
 
-  const clearSearch = async() => {
-    handleAddPress(searchText);;
-    setSearchText('');
-    await fetchData();
-    };
-
-    const ListItem = React.memo(({ item, onRemove }) => (
-      <View style={styles.itemContainer}>
-        <View style={styles.itemContent}>
-          <Text style={styles.itemText}>{item.product}</Text>
-          <Text style={styles.dateText}>Datum tillagt: {item.datum ? item.datum : '22/8/2023'}</Text>
-        </View>
-        <TouchableOpacity onPress={onRemove} style={styles.crossIconContainer}>
-          <Text style={styles.crossIcon}>•••</Text>
-        </TouchableOpacity>
-      </View>
-    ));
-    
-    
-
   return (
-    <View style={styles.container}>
-      {!isLoggedIn ? (
-        <View style={styles.centerContainer}>
-          <Text style={styles.centerText}>
-            Logga in/Skapa konto för att använda denna funktionen
-          </Text>
-        </View>
-      ) : (
-        <>
-          <View style={styles.titleContainer}>
-            <Text style={styles.title}>Inköpslista</Text>
-          </View>
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={styles.searchContainer}>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Sök eller lägg till en produkt här"
-                value={searchText}
-                onChangeText={handleSearch}
-              />
-              {searchText !== '' && (
-                <TouchableOpacity style={styles.clearButton} onPress={clearSearch}>
-                  <Text style={styles.clearButtonText}>Lägg till</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </TouchableWithoutFeedback>
-          <FlatList
- data={filteredData}
- keyExtractor={(item) => item.EAN}
- renderItem={({ item }) => <ListItem item={item} onRemove={handleRemoveItem(item)} />}
- initialNumToRender={10}  // Adjust as needed
- windowSize={5}  // Adjust as needed
-/>
-        </>
-      )}
-    </View>
-  );
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Inköpslista</Text>
+        <Text style={styles.subtitle}>{data.length} produkter</Text>
+      </View>
 
-  
+      <View style={styles.searchContainer}>
+        <Icon name="search" size={16} color={COLORS.textLight} style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Sök eller lägg till produkt..."
+          placeholderTextColor={COLORS.textLight}
+          value={searchText}
+          onChangeText={handleSearch}
+          returnKeyType="done"
+          onSubmitEditing={searchText.trim() ? handleAddManual : undefined}
+        />
+        {searchText !== '' && (
+          <TouchableOpacity style={styles.addButton} onPress={handleAddManual}>
+            <Icon name="plus" size={14} color={COLORS.white} />
+            <Text style={styles.addButtonText}>Lägg till</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {loading ? (
+        <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />
+      ) : (
+        <FlatList
+          data={filteredData}
+          keyExtractor={(item) => item.EAN}
+          renderItem={({ item }) => (
+            <ListItem item={item} onAction={() => handleItemAction(item)} />
+          )}
+          contentContainerStyle={filteredData.length === 0 && styles.emptyList}
+          ListEmptyComponent={
+            <View style={styles.emptyListContent}>
+              <Icon name="shopping-cart" size={40} color={COLORS.textLight} />
+              <Text style={styles.emptyListText}>
+                {searchText ? 'Inga matchande produkter' : 'Din inköpslista är tom'}
+              </Text>
+            </View>
+          }
+          keyboardShouldPersistTaps="handled"
+        />
+      )}
+    </SafeAreaView>
+  );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'white',
-    paddingTop: 16,
+    backgroundColor: COLORS.background,
   },
-
-  centerText:{
-    top:50,
-    left: 10,
-  },
-  titleContainer: {
-    marginTop: 40,
-    marginBottom: 16,
-    paddingHorizontal: 16, // Added padding here to keep the title indented
+  header: {
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.sm,
   },
   title: {
-    fontSize: 26,
-    fontWeight: 'bold',
+    fontSize: FONT.size.title,
+    ...FONT.bold,
+    color: COLORS.text,
   },
   subtitle: {
-    fontSize: 18,
+    fontSize: FONT.size.sm,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.xs,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 16, // Added padding here to keep the search input indented
+    marginHorizontal: SPACING.lg,
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingLeft: SPACING.md,
+  },
+  searchIcon: {
+    marginRight: SPACING.sm,
   },
   searchInput: {
     flex: 1,
-    backgroundColor: 'white',
-    paddingHorizontal: 16,
-    height: 35,
-    borderBottomWidth: 1,
-    borderBottomColor: 'lightgray'
+    paddingVertical: SPACING.sm + 2,
+    fontSize: FONT.size.md,
+    color: COLORS.text,
   },
-  clearButton: {
-    marginLeft: 8,
-    padding: 8,
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    backgroundColor: COLORS.primary,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.sm,
+    marginRight: SPACING.xs,
   },
-  clearButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
+  addButtonText: {
+    color: COLORS.white,
+    fontSize: FONT.size.sm,
+    ...FONT.semibold,
+  },
+  loader: {
+    marginTop: SPACING.xxl,
   },
   itemContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8, // Reduced the vertical padding
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
-    borderBottomColor: 'lightgray'
+    borderBottomColor: COLORS.border,
   },
-  crossIcon: {
-    fontSize: 22,
-    color: 'black',
-    paddingHorizontal: 16, // Added padding here to ensure touch area and alignment are good
+  itemContent: {
+    flex: 1,
+    marginRight: SPACING.md,
   },
   itemText: {
-    left: 20,
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: 'black',
+    fontSize: FONT.size.md,
+    ...FONT.semibold,
+    color: COLORS.text,
   },
   dateText: {
-    left: 20,
-    fontSize: 14,
-    color: 'gray',
-    paddingHorizontal: 0,  // Padding added here
-    paddingTop: 4,
+    fontSize: FONT.size.xs,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.xs,
   },
-  crossIcon: {
-    right: 10,
-    fontSize: 22,
-    color: 'lightgray',
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.xxl,
+    gap: SPACING.sm,
+  },
+  emptyTitle: {
+    fontSize: FONT.size.xl,
+    ...FONT.bold,
+    color: COLORS.text,
+    marginTop: SPACING.md,
+  },
+  emptyText: {
+    fontSize: FONT.size.md,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  loginButton: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.xl,
+    borderRadius: RADIUS.md,
+    marginTop: SPACING.md,
+  },
+  loginButtonText: {
+    color: COLORS.white,
+    fontSize: FONT.size.md,
+    ...FONT.bold,
+  },
+  emptyList: {
+    flex: 1,
+  },
+  emptyListContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: SPACING.md,
+    paddingBottom: SPACING.xxl,
+  },
+  emptyListText: {
+    fontSize: FONT.size.md,
+    color: COLORS.textSecondary,
   },
 });

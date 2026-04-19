@@ -1,209 +1,302 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, StyleSheet, Image } from 'react-native';
+import React from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Alert,
+  StyleSheet,
+  ScrollView,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../src/AuthContext';
+import { apiDeleteAllProducts, apiDeleteUser } from '../src/api';
+import { COLORS, SPACING, FONT, RADIUS, SHADOW } from '../src/theme';
+import { FontAwesome as Icon } from '@expo/vector-icons';
 
+function SettingsButton({ icon, label, onPress, destructive = false }) {
+  return (
+    <TouchableOpacity
+      style={[styles.settingsButton, destructive && styles.destructiveButton]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={[styles.iconCircle, destructive && styles.destructiveIcon]}>
+        <Icon
+          name={icon}
+          size={16}
+          color={destructive ? COLORS.danger : COLORS.primary}
+        />
+      </View>
+      <Text style={[styles.settingsButtonText, destructive && styles.destructiveText]}>
+        {label}
+      </Text>
+      <Icon name="chevron-right" size={14} color={COLORS.textLight} />
+    </TouchableOpacity>
+  );
+}
 
-export default function SettingsScreen({ handleLogin, handleLogout }) {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+export default function SettingsScreen() {
+  const { isLoggedIn, username, apiKey, logout } = useAuth();
   const navigation = useNavigation();
 
-  useFocusEffect(
-    React.useCallback(() => {
-    checkLoggedIn();
-}));
+  const handleLogout = async () => {
+    await logout();
+    navigation.navigate('Hem');
+  };
 
-const checkLoggedIn = async () => {
-  try {
-    const storedUsername = await AsyncStorage.getItem('username');
-    const storedApiKey = await AsyncStorage.getItem('apiKey');
+  const confirmAction = (title, message, onConfirm, confirmText = 'Bekräfta') => {
+    Alert.alert(title, message, [
+      { text: 'Avbryt', style: 'cancel' },
+      { text: confirmText, style: 'destructive', onPress: onConfirm },
+    ]);
+  };
 
-    if (storedUsername && storedApiKey) {
-      // User is already logged in, navigate to the main app
-      setIsLoggedIn(true);
-      global.api_key = storedApiKey;
+  const handleDeletePantry = () => {
+    confirmAction(
+      'Rensa skafferiet',
+      'Är du säker? Alla produkter i skafferiet tas bort.',
+      async () => {
+        try {
+          await apiDeleteAllProducts(apiKey);
+          Alert.alert('Klart', 'Skafferiet har rensats');
+        } catch (error) {
+          console.error('Delete pantry error:', error);
+          Alert.alert('Fel', 'Kunde inte rensa skafferiet');
+        }
+      },
+      'Radera alla'
+    );
+  };
 
-      // Set global.username from AsyncStorage only if it's not already set
-      if (!global.username) {
-        global.username = storedUsername;
-      }
-    }
-  } catch (error) {
-    console.error(error);
+  const handleDeleteShopping = () => {
+    confirmAction(
+      'Rensa inköpslistan',
+      'Är du säker? Alla produkter i inköpslistan tas bort.',
+      async () => {
+        try {
+          await apiDeleteAllProducts(apiKey, 'shopping');
+          Alert.alert('Klart', 'Inköpslistan har rensats');
+        } catch (error) {
+          console.error('Delete shopping error:', error);
+          Alert.alert('Fel', 'Kunde inte rensa inköpslistan');
+        }
+      },
+      'Radera alla'
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    confirmAction(
+      'Radera konto',
+      'Är du säker? Ditt konto och all data raderas permanent.',
+      async () => {
+        try {
+          const json = await apiDeleteUser(apiKey);
+          if (json.success) {
+            Alert.alert('Kontot raderat', 'Hoppas vi ses igen!');
+            handleLogout();
+          } else {
+            Alert.alert('Fel', json.error || 'Kunde inte radera konto');
+          }
+        } catch (error) {
+          console.error('Delete account error:', error);
+          Alert.alert('Fel', 'Gick inte att radera konto');
+        }
+      },
+      'Radera konto'
+    );
+  };
+
+  if (!isLoggedIn) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loggedOutContainer}>
+          <View style={styles.avatarCircle}>
+            <Icon name="user" size={40} color={COLORS.textLight} />
+          </View>
+          <Text style={styles.loggedOutTitle}>Inte inloggad</Text>
+          <Text style={styles.loggedOutText}>
+            Logga in för att hantera ditt konto och inställningar
+          </Text>
+          <TouchableOpacity
+            style={styles.loginButton}
+            onPress={() => navigation.navigate('Logga in')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.loginButtonText}>Logga in / Skapa konto</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
   }
-};
-
-
-  const handleLogoutPress = async () => {
-    await AsyncStorage.removeItem('username');
-    await AsyncStorage.removeItem('apiKey');
-    global.api_key = null;
-    setIsLoggedIn(false);
-    navigation.navigate('Skanna');
-  };
-
-  const handleLoginPress = () => {
-    navigation.navigate('Logga in');
-  };
-
-
-  const handleDelete = async () => {
-    Alert.alert(
-      'Godkännande',
-      'Är du säker att du vill radera ditt konto :(',
-      [
-        {
-          text: 'Avbryt :)',
-          style: 'cancel',
-        },
-        {
-          text: 'Radera konto :(',
-          style: 'destructive',
-          onPress: performDelete,
-        },
-      ]
-    );
-  };
-  const handleDeleteAllPantry = async () => {
-    Alert.alert(
-      'Godkännande',
-      'Är du säker att du vill rensa hela ditt skafferi?',
-      [
-        {
-          text: 'Avbryt',
-          style: 'cancel',
-        },
-        {
-          text: 'Radera alla varor',
-          style: 'destructive',
-          onPress: performDeleteProducts,
-        },
-      ]
-    );
-  };
-  const handleDeleteAllShopping = async () => {
-    Alert.alert(
-      'Godkännande',
-      'Är du säker att du vill rensa hela din inköpslista?',
-      [
-        {
-          text: 'Avbryt',
-          style: 'cancel',
-        },
-        {
-          text: 'Radera alla varor',
-          style: 'destructive',
-          onPress: performDeleteProductsShopping,
-        },
-      ]
-    );
-  };
-
-  const performDeleteProducts = async () => {
-    try {
-      const response = await fetch('http://alvhage.se/api/delete.php?EAN=ALLPRODUCTS&api_key=' + global.api_key, {
-        method: 'GET'
-      });
-      const json = await response.text();
-      console.log(json);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const performDeleteProductsShopping = async () => {
-    try {
-      const response = await fetch('http://alvhage.se/api/delete.php?EAN=ALLPRODUCTS&api_key=' + global.api_key + '&list=shopping', {
-        method: 'GET'
-      });
-      const json = await response.text();
-      console.log(json);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const performDelete = async () => {
-    AsyncStorage.removeItem('username');
-    AsyncStorage.removeItem('apiKey');
-    try {
-      const response = await fetch('http://alvhage.se/api/delete_user.php', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `api_key=${global.api_key}`,
-      });
-      const json = await response.json();
-      console.log(json);
-      if (json.success) {
-        Alert.alert('SUCCESS', 'Konto raderat, hoppas vi ses igen');
-        handleLogoutPress();
-      } else {
-        Alert.alert('Error', json['error']);
-      }
-    } catch (error) {
-      console.error(error);
-      Alert.alert('Error', 'Gick inte att radera konto, vänligen maila simon.alvhage@gmail.com');
-    }
-  };
 
   return (
-    <View style={styles.container}>
-        <Image source={require('../assets/person.png')} style={styles.profileIcon} />
-        {!isLoggedIn ? (
-            <TouchableOpacity style={styles.button} onPress={handleLoginPress}>
-                <Text style={styles.buttonText}>Logga in/Skapa konto</Text>
-            </TouchableOpacity>
-        ) : (
-            <>  
-            <Text style={styles.username}>Välkommen {global.username}</Text>
-         <TouchableOpacity style={styles.button} onPress={handleDeleteAllPantry}>
-  <Text style={styles.buttonText}>Radera Skafferiet</Text>
-</TouchableOpacity>
-<TouchableOpacity style={styles.button} onPress={handleDeleteAllShopping}>
-  <Text style={styles.buttonText}>Radera inköpslistan</Text>
-</TouchableOpacity>
-<TouchableOpacity style={styles.button} onPress={handleLogoutPress}>
-  <Text style={styles.buttonText}>Logga ut</Text>
-</TouchableOpacity>
-<TouchableOpacity style={styles.button} onPress={handleDelete}>
-  <Text style={styles.buttonText}>Radera konto</Text>
-</TouchableOpacity>
-            </>
-        )}
-    </View>
-);
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.profileSection}>
+          <View style={styles.avatarCircle}>
+            <Icon name="user" size={32} color={COLORS.primary} />
+          </View>
+          <Text style={styles.username}>{username}</Text>
+          <Text style={styles.welcomeText}>Välkommen!</Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Hantera data</Text>
+          <View style={styles.sectionCard}>
+            <SettingsButton
+              icon="home"
+              label="Rensa skafferiet"
+              onPress={handleDeletePantry}
+            />
+            <View style={styles.divider} />
+            <SettingsButton
+              icon="shopping-cart"
+              label="Rensa inköpslistan"
+              onPress={handleDeleteShopping}
+            />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Konto</Text>
+          <View style={styles.sectionCard}>
+            <SettingsButton
+              icon="sign-out"
+              label="Logga ut"
+              onPress={handleLogout}
+            />
+            <View style={styles.divider} />
+            <SettingsButton
+              icon="trash"
+              label="Radera konto"
+              onPress={handleDeleteAccount}
+              destructive
+            />
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
   container: {
-      flex: 1,
-      marginTop: 150,
-      alignItems: 'center',
-      justifyContent: 'center', // This will vertically center items
+    flex: 1,
+    backgroundColor: COLORS.background,
   },
-  profileIcon: {
-      width: 100,
-      height: 129,
-      marginBottom: 20, // Space between the icon and the buttons
+  scrollContent: {
+    paddingBottom: SPACING.xxl,
   },
-  button: {
-      backgroundColor: '#FF9F79',
-      padding: 10,
-      borderRadius: 5,
-      marginBottom: 30,
-      width: '80%',
+  profileSection: {
+    alignItems: 'center',
+    paddingVertical: SPACING.xl,
+    paddingHorizontal: SPACING.lg,
   },
-  buttonText: {
-      color: '#fff',
-      fontSize: 18,
-      fontWeight: 'bold',
-      textAlign: 'center',
+  avatarCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: COLORS.surfaceAlt,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+    borderWidth: 2,
+    borderColor: COLORS.border,
   },
   username: {
-    fontSize: 20,
-    marginBottom: 150,
-  }
+    fontSize: FONT.size.xl,
+    ...FONT.bold,
+    color: COLORS.text,
+  },
+  welcomeText: {
+    fontSize: FONT.size.sm,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.xs,
+  },
+  loggedOutContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.xxl,
+    gap: SPACING.sm,
+  },
+  loggedOutTitle: {
+    fontSize: FONT.size.xl,
+    ...FONT.bold,
+    color: COLORS.text,
+    marginTop: SPACING.md,
+  },
+  loggedOutText: {
+    fontSize: FONT.size.md,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  loginButton: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.xl,
+    borderRadius: RADIUS.md,
+    marginTop: SPACING.md,
+    ...SHADOW.sm,
+  },
+  loginButtonText: {
+    color: COLORS.white,
+    fontSize: FONT.size.md,
+    ...FONT.bold,
+  },
+  section: {
+    marginTop: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+  },
+  sectionTitle: {
+    fontSize: FONT.size.xs,
+    ...FONT.semibold,
+    color: COLORS.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: SPACING.sm,
+    marginLeft: SPACING.xs,
+  },
+  sectionCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    ...SHADOW.sm,
+    overflow: 'hidden',
+  },
+  settingsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+  },
+  destructiveButton: {},
+  iconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: `${COLORS.primary}15`,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.md,
+  },
+  destructiveIcon: {
+    backgroundColor: `${COLORS.danger}15`,
+  },
+  settingsButtonText: {
+    flex: 1,
+    fontSize: FONT.size.md,
+    color: COLORS.text,
+    ...FONT.medium,
+  },
+  destructiveText: {
+    color: COLORS.danger,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginLeft: SPACING.md + 36 + SPACING.md,
+  },
 });

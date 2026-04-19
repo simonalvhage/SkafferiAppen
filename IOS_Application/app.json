@@ -2,7 +2,7 @@
   "expo": {
     "name": "skafferiappen",
     "slug": "skafferiappen",
-    "version": "2.0.3",
+    "version": "3.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -18,12 +18,13 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.98simon.skafferiappen",
       "infoPlist": {
-        "NSCameraUsageDescription": "We need to access your camera to allow you to scan for barcodes. Only the barcode number is collected."
+        "NSCameraUsageDescription": "We need to access your camera to allow you to scan for barcodes. Only the barcode number is collected.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.skafferiappen",
-      "versionCode": 1,
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"

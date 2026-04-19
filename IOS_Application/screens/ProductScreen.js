@@ -1,193 +1,272 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity,Alert,Image,ImageBackground } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  Image,
+  ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import bottleIcon from '../assets/bottle.png'; // Replace with your actual path
-import skafferietImage from '../assets/skafferiet.jpeg'; // Replace with your actual path
+import { useAuth } from '../src/AuthContext';
+import { apiAddProduct, apiDeleteProduct } from '../src/api';
+import { gs1GetThumbnailUrl } from '../src/api';
+import { COLORS, SPACING, FONT, RADIUS, SHADOW } from '../src/theme';
+import { FontAwesome as Icon } from '@expo/vector-icons';
 
-function ProductScreen({ route }) {
-    const navigation = useNavigation();
-    const { text, semitext, action, barcode_data } = route.params;
-    const [thumbnailUrl, setThumbnailUrl] = useState(null); // State to store the thumbnail URL
-    
+export default function ProductScreen({ route }) {
+  const navigation = useNavigation();
+  const { apiKey } = useAuth();
+  const { text, semitext, action, barcode_data } = route.params;
+  const [thumbnailUrl, setThumbnailUrl] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [imageLoading, setImageLoading] = useState(true);
 
-    useEffect(() => {
-        // Fetch the thumbnail URL when the component mounts
-        fetchProductThumbnail(barcode_data).then(url => {
-            console.log(url)
-            setThumbnailUrl(url);
-        });
-    }, [barcode_data]);
+  const isInPantry = action === 'remove';
 
-    const handleActionButton = () => {
-        if (action === 'add') {
-            handleAddPress(); // Call function to add product
-        } else if (action === 'remove') {
-            handleRemovePress(); // Call function to remove product
-        }
-    };
+  useEffect(() => {
+    gs1GetThumbnailUrl(barcode_data).then((url) => {
+      setThumbnailUrl(url);
+      if (!url) setImageLoading(false);
+    });
+  }, [barcode_data]);
 
-    const fetchProductThumbnail = async (data) => {
-        try {
-            // Make the first request to search for the product
-            const response = await fetch("https://productsearch.gs1.se/foodservice/tradeItem/search", {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  "query": data,
-                  "sortby": 0,
-                  "sortDirection": 1
-                })
-            });
-    
-            const json = await response.json();
-            
-            // Check if the results array has at least one item and it has a thumbnail property
-            if (json.results && json.results[0] && json.results[0].thumbnail) {
-                const thumbnail = json.results[0].thumbnail;
-                // Make the second request to get the thumbnail
-                const thumbnailResponse = await fetch(`https://productsearch.gs1.se/foodservice/asset/${thumbnail}`);
-    
-                // Depending on what you want to do with the thumbnail response, you can process it here
-                // For this example, I'll just return it as a blob (common for images)
-
-                return thumbnailResponse.url;
-            } else {
-                console.log('Thumbnail not found in the response.');
-            }
-    
-        } catch (error) {
-            console.error("Error fetching product thumbnail:", error);
-        }
+  const handleAdd = async () => {
+    setLoading(true);
+    try {
+      await apiAddProduct(barcode_data, text, apiKey);
+      navigation.goBack();
+    } catch (error) {
+      console.error('Add product error:', error);
+      Alert.alert('Fel', 'Kunde inte lägga till produkt');
+    } finally {
+      setLoading(false);
     }
-    
+  };
 
-    const handleAddPress = async () => {
-        console.log(`EAN=${barcode_data}&product=${text}`);
-        if (barcode_data && text) {
-          try {
-            const response = await fetch('http://alvhage.se/api/post.php', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-              body: `EAN=${barcode_data}&product=${text}&api_key=${global.api_key}`
-            });
-            const json = await response.text();
-            console.log(json);
-            navigation.goBack()
-          } catch (error) {
-            console.error(error);
-          }
-        }
-      };
-
-    const handleRemovePress = async () => {
-    
-        console.log(`EAN=${barcode_data}&product=${text}`);
-        Alert.alert(
-          'Lägg till i inköpslistan?',
-          'Vill du ta bort produkten och lägga till den i din inköpslista istället?',
-          [
-            {
-              text: 'Lägg till i inköpslista',
-              onPress: async () => {
-                try {
-                  const response = await fetch('http://alvhage.se/api/post.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: `EAN=${barcode_data}&product=${text}&api_key=${global.api_key}&list=shopping`
-                  });
-                  const json = await response.text();
-                  console.log(json);
-                } catch (error) {
-                  console.error(error);
-                }
-                
-                try {
-                  const response = await fetch('http://alvhage.se/api/delete.php?EAN=' + barcode_data + "&api_key=" + global.api_key, {
-                    method: 'GET'
-                  });
-                  const json = await response.text();
-                  console.log(json);
-                  navigation.goBack()
-                } catch (error) {
-                  console.error(error);
-                }
-              },
-            },
-            {
-              text: 'Radera',
-              onPress: async () => {
-                try {
-                  const response = await fetch('http://alvhage.se/api/delete.php?EAN=' + barcode_data + "&api_key=" + global.api_key, {
-                    method: 'GET'
-                  });
-                  const json = await response.text();
-                  console.log(json);
-                  navigation.goBack()
-                } catch (error) {
-                  console.error(error);
-                }
-              },
-              style: 'destructive',
-            },
-            {text: 'Avbryt',
-            onPress: async () => {},
-          }
-          ],
-          { cancelable: true }
-        );
-      };
-
-      return (
-        <ImageBackground source={skafferietImage} style={styles.background}>
-            <View style={styles.contentContainer}>
-                <Image source={thumbnailUrl ? { uri: thumbnailUrl } : bottleIcon} style={styles.thumbnail} resizeMode='contain' />
-                <Text style={styles.mainText}>{text}</Text>
-                <TouchableOpacity style={styles.actionButton} onPress={handleActionButton}>
-                    <Text style={styles.buttonText}>{action === 'add' ? 'Lägg till produkt' : 'Radera produkt'}</Text>
-                </TouchableOpacity>
-            </View>
-        </ImageBackground>
+  const handleRemove = () => {
+    Alert.alert(
+      'Ta bort produkt',
+      'Vad vill du göra med produkten?',
+      [
+        {
+          text: 'Flytta till inköpslista',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await apiAddProduct(barcode_data, text, apiKey, 'shopping');
+              await apiDeleteProduct(barcode_data, apiKey);
+              navigation.goBack();
+            } catch (error) {
+              console.error('Move to shopping error:', error);
+              Alert.alert('Fel', 'Kunde inte flytta produkt');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+        {
+          text: 'Radera',
+          style: 'destructive',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await apiDeleteProduct(barcode_data, apiKey);
+              navigation.goBack();
+            } catch (error) {
+              console.error('Delete product error:', error);
+              Alert.alert('Fel', 'Kunde inte radera produkt');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+        { text: 'Avbryt', style: 'cancel' },
+      ]
     );
-      }    
+  };
+
+  return (
+    <SafeAreaView style={styles.container} edges={['bottom']}>
+      <View style={styles.content}>
+        <View style={styles.imageContainer}>
+          {thumbnailUrl ? (
+            <>
+              {imageLoading && (
+                <ActivityIndicator size="large" color={COLORS.primary} />
+              )}
+              <Image
+                source={{ uri: thumbnailUrl }}
+                style={[styles.thumbnail, imageLoading && styles.hidden]}
+                resizeMode="contain"
+                onLoad={() => setImageLoading(false)}
+                onError={() => setImageLoading(false)}
+              />
+            </>
+          ) : (
+            <View style={styles.placeholderImage}>
+              <Icon name="cube" size={60} color={COLORS.textLight} />
+            </View>
+          )}
+        </View>
+
+        <View style={styles.infoSection}>
+          <View
+            style={[
+              styles.statusBadge,
+              isInPantry ? styles.statusInPantry : styles.statusNotInPantry,
+            ]}
+          >
+            <Icon
+              name={isInPantry ? 'check-circle' : 'plus-circle'}
+              size={14}
+              color={isInPantry ? COLORS.accent : COLORS.primary}
+            />
+            <Text
+              style={[
+                styles.statusText,
+                isInPantry ? styles.statusTextInPantry : styles.statusTextNotInPantry,
+              ]}
+            >
+              {semitext}
+            </Text>
+          </View>
+
+          <Text style={styles.productName}>{text}</Text>
+        </View>
+      </View>
+
+      <View style={styles.actions}>
+        {isInPantry ? (
+          <TouchableOpacity
+            style={[styles.actionButton, styles.removeButton]}
+            onPress={handleRemove}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            {loading ? (
+              <ActivityIndicator color={COLORS.white} />
+            ) : (
+              <>
+                <Icon name="minus-circle" size={20} color={COLORS.white} />
+                <Text style={styles.actionButtonText}>Ta bort produkt</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[styles.actionButton, styles.addButton]}
+            onPress={handleAdd}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            {loading ? (
+              <ActivityIndicator color={COLORS.white} />
+            ) : (
+              <>
+                <Icon name="plus-circle" size={20} color={COLORS.white} />
+                <Text style={styles.actionButtonText}>Lägg till i skafferiet</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+      </View>
+    </SafeAreaView>
+  );
+}
 
 const styles = StyleSheet.create({
-  background: {
+  container: {
     flex: 1,
-    justifyContent: 'flex',
-},
-  contentContainer: {
-      backgroundColor: 'rgba(255,255,255,1)',
-      alignItems: 'center',
-      padding: 20,
-      borderRadius: 30,
-      width: '100%',
-      height: '80%',
-      top: 300
-
+    backgroundColor: COLORS.background,
+  },
+  content: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: SPACING.lg,
+  },
+  imageContainer: {
+    width: '100%',
+    height: 250,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
+    marginTop: SPACING.lg,
+    ...SHADOW.sm,
   },
   thumbnail: {
-    width: 150,
-    height: 250,
-    marginBottom: 10,
-},
-  mainText: {
-      fontSize: 30,
-      fontWeight: 'bold',
-      textAlign: 'center',
+    width: '80%',
+    height: '80%',
+  },
+  hidden: {
+    opacity: 0,
+  },
+  placeholderImage: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  infoSection: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: SPACING.xl,
+    gap: SPACING.md,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingVertical: SPACING.xs + 2,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full,
+  },
+  statusInPantry: {
+    backgroundColor: `${COLORS.accent}18`,
+  },
+  statusNotInPantry: {
+    backgroundColor: `${COLORS.primary}18`,
+  },
+  statusText: {
+    fontSize: FONT.size.sm,
+    ...FONT.semibold,
+  },
+  statusTextInPantry: {
+    color: COLORS.accent,
+  },
+  statusTextNotInPantry: {
+    color: COLORS.primary,
+  },
+  productName: {
+    fontSize: FONT.size.xxl,
+    ...FONT.bold,
+    color: COLORS.text,
+    textAlign: 'center',
+    lineHeight: 38,
+  },
+  actions: {
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.lg,
   },
   actionButton: {
-      paddingHorizontal: 20,
-      paddingVertical: 15,
-      borderRadius: 10,
-      backgroundColor: '#9EECFF',
-      marginTop: 20,
-      top: 0
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.md + 2,
+    borderRadius: RADIUS.md,
+    ...SHADOW.md,
   },
-  buttonText: {
-      color: 'white',
-      fontSize: 20,
+  addButton: {
+    backgroundColor: COLORS.primary,
+  },
+  removeButton: {
+    backgroundColor: COLORS.danger,
+  },
+  actionButtonText: {
+    color: COLORS.white,
+    fontSize: FONT.size.lg,
+    ...FONT.bold,
   },
 });
-export default ProductScreen;
